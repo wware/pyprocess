@@ -37,3 +37,39 @@ The system supports basic features like:
 I prompted the AI (the assistant in Cursor IDE) to generate a types-and-interfaces
 level architecture for the Replit clone. I prompted it to improve the documentation
 and comments.
+
+> Based on what is in models.py, please write two things.
+> (1) A schema for a SQLite database for this thing. You can assume SQLite will use a
+> file on the local hard drive.
+> (2) A comprehensive set of pytest test cases. Everything so far is interfaces, so
+> feel free to use dependency injection and define whatever mock objects you need.
+
+## Testing
+
+To run the tests, you have several options:
+
+Basic test run (uses all mocks):
+```bash
+pytest replit_clone/tests/
+```
+
+Test a specific real implementation (others mocked):
+```bash
+pytest replit_clone/tests/ --test-mode=project-storage
+pytest replit_clone/tests/ --test-mode=file-storage
+pytest replit_clone/tests/ --test-mode=code-executor
+pytest replit_clone/tests/ --test-mode=runtime-env
+```
+
+Additional useful pytest options:
+```bash
+pytest replit_clone/tests/ -v         # verbose output
+pytest replit_clone/tests/ -s         # show print statements
+pytest replit_clone/tests/ -k "test_name"  # run specific test
+pytest replit_clone/tests/ --pdb      # drop into debugger on failure
+```
+
+Remember to install required packages:
+```bash
+pip install pytest pytest-asyncio
+```

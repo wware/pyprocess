@@ -1,12 +1,5 @@
-from datetime import datetime
-from enum import Enum
-from pydantic import BaseModel
-from typing import Optional, List
-from uuid import UUID
-from abc import ABC, abstractmethod
-
-
-"""Core models and interfaces for the Replit Clone system
+"""
+Core models and interfaces for the Replit Clone system
 
 This module defines the fundamental data structures and interfaces for a local
 Replit-like code execution environment. It provides:
@@ -30,6 +23,14 @@ The interfaces are designed to be implementation-agnostic, allowing for
 different storage backends (SQLite, filesystem, etc.) and execution
 strategies (processes, containers, etc.).
 """
+
+from abc import ABC, abstractmethod
+from datetime import datetime
+from enum import Enum
+from typing import List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class ExecutionStatus(str, Enum):
@@ -62,14 +63,23 @@ class Project(BaseModel):
 
     A project is the top-level container for code files and execution
     environment. It maintains metadata about the workspace and its owner.
+
+    Attributes:
+        id: Unique identifier for the project
+        name: Display name of the project
+        description: Optional detailed description
+        language: Primary programming language for the project
+        created_at: Timestamp of project creation
+        updated_at: Timestamp of last modification
+        owner_id: Identifier for the project owner
     """
-    id: UUID                  # Unique identifier for the project
-    name: str                 # Display name of the project
-    description: Optional[str] # Optional detailed description
-    language: Language        # Primary programming language for the project
-    created_at: datetime      # Timestamp of project creation
-    updated_at: datetime      # Timestamp of last modification
-    owner_id: str            # Identifier for the project owner
+    id: UUID                    # Unique identifier for the project
+    name: str                   # Display name of the project
+    description: Optional[str]  # Optional detailed description
+    language: Language          # Primary programming language for the project
+    created_at: datetime        # Timestamp of project creation
+    updated_at: datetime        # Timestamp of last modification
+    owner_id: str               # Identifier for the project owner
 
 
 class File(BaseModel):
@@ -77,39 +87,122 @@ class File(BaseModel):
 
     Tracks both file metadata and content. Files are always associated
     with a specific project and maintain their modification history.
+
+    Attributes:
+        id: Unique identifier for the file
+        project_id: ID of the project this file belongs to
+        path: Relative path within project
+        content: File contents as text
+        created_at: Timestamp of file creation
+        updated_at: Timestamp of last modification
+
+    Validators:
+        path: Ensures path is not empty
+        project_id: Validates and converts UUID strings to UUID objects
     """
     id: UUID                  # Unique identifier for the file
-    project_id: UUID         # ID of the parent project
-    path: str                # Relative path within project (e.g., "src/main.py")
-    content: str             # Actual file contents as text
+    project_id: UUID          # ID of the project this file belongs to
+    path: str = Field(description="Relative path within project")
+    content: str = Field(description="File contents")
     created_at: datetime      # Timestamp of file creation
     updated_at: datetime      # Timestamp of last modification
 
+    model_config = {
+        'strict': True,       # Enforce strict type checking
+        'validate_assignment': True,
+        'from_attributes': True
+    }
+
+    @field_validator('path')
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        """Validate the file path
+
+        Args:
+            v: Path string to validate
+
+        Returns:
+            str: The validated path
+
+        Raises:
+            ValueError: If path is empty or only whitespace
+        """
+        if not v.strip():
+            raise ValueError("Path cannot be empty")
+        return v
+
+    @field_validator('project_id')
+    @classmethod
+    def validate_project_id(cls, v):
+        """Validate and convert project_id to UUID
+
+        Args:
+            v: Project ID to validate (str or UUID)
+
+        Returns:
+            UUID: The validated project ID
+
+        Raises:
+            ValueError: If value is not a valid UUID
+        """
+        if isinstance(v, str):
+            try:
+                return UUID(v)
+            except ValueError as exc:
+                raise ValueError("Invalid UUID format") from exc
+        if not isinstance(v, UUID):
+            raise ValueError("Must be UUID or valid UUID string")
+        return v
+
 
 class ExecutionResult(BaseModel):
-    """Results from code execution
+    """Represents the result of code execution
 
-    Captures both the execution metadata and output. Provides comprehensive
-    tracking of resource usage and execution status.
+    Tracks both the execution status and resource usage metrics.
+    Used to monitor and report on code execution progress.
+
+    Attributes:
+        execution_id: Unique identifier for this execution
+        project_id: ID of the project being executed
+        status: Current execution status (QUEUED, RUNNING, etc.)
+        stdout: Standard output from the execution
+        stderr: Standard error output from the execution
+        exit_code: Process exit code (None while running)
+        started_at: When execution began
+        completed_at: When execution finished (None while running)
+        memory_usage: Peak memory usage in MB
+        cpu_time: Total CPU time used in seconds
     """
-    execution_id: UUID        # Unique identifier for this execution
-    project_id: UUID         # ID of the project being executed
-    status: ExecutionStatus  # Current status of the execution
-    stdout: str              # Standard output from the execution
-    stderr: str              # Standard error output from the execution
-    exit_code: int           # Process exit code (0 typically indicates success)
-    started_at: datetime      # Timestamp when execution began
-    completed_at: Optional[datetime]  # Timestamp when execution finished (if completed)
-    memory_usage: Optional[float]     # Peak memory usage in MB
-    cpu_time: Optional[float]         # Total CPU time consumed in seconds
+    execution_id: UUID          # Unique identifier for this execution
+    project_id: UUID           # ID of the project being executed
+    status: ExecutionStatus    # Current execution status
+    stdout: str                # Standard output from the execution
+    stderr: str                # Standard error output from the execution
+    exit_code: int | None      # Process exit code (None while running)
+    started_at: datetime       # When execution began
+    completed_at: datetime | None   # When execution finished (None while
+                                    # noqa: E116               running)
+    memory_usage: float        # Peak memory usage in MB
+    cpu_time: float           # Total CPU time used in seconds
+
+    model_config = {
+        'strict': True,
+        'validate_assignment': True,
+    }
 
 
 class ProjectStorage(ABC):
     """Interface for project persistence
 
     Defines the contract for storing and retrieving project data.
-    Implementations might use databases, file systems, or other storage backends.
-    All operations are async to support high concurrency.
+    Implementations might use databases, file systems, or other storage
+    backends. All operations are async to support high concurrency.
+
+    Implementation considerations:
+        - Data consistency
+        - Concurrent access
+        - Error handling
+        - Resource cleanup
     """
 
     @abstractmethod
@@ -117,23 +210,24 @@ class ProjectStorage(ABC):
         """Create a new project in storage.
 
         Args:
-            project: The Project model to store. Should not have existing storage ID.
+            project: The Project model to store. Should not have existing
+                     storage ID.
 
         Returns:
-            Project: The stored project with any storage-specific fields populated.
+            Project: The stored project with any storage-specific fields
+                     populated.
 
         Raises:
             DuplicateError: If project with same name/owner already exists
             StorageError: If storage operation fails
         """
-        pass
 
     @abstractmethod
-    async def get_project(self, id: UUID) -> Project:
+    async def get_project(self, project_id: UUID) -> Project:
         """Retrieve a project by its ID.
 
         Args:
-            id: UUID of the project to retrieve
+            project_id: UUID of the project to retrieve
 
         Returns:
             Project: The requested project
@@ -142,7 +236,6 @@ class ProjectStorage(ABC):
             NotFoundError: If project doesn't exist
             StorageError: If storage operation fails
         """
-        pass
 
     @abstractmethod
     async def list_projects(self, owner_id: str) -> List[Project]:
@@ -157,20 +250,18 @@ class ProjectStorage(ABC):
         Raises:
             StorageError: If storage operation fails
         """
-        pass
 
     @abstractmethod
-    async def delete_project(self, id: UUID) -> None:
+    async def delete_project(self, project_id: UUID) -> None:
         """Delete a project and all associated data.
 
         Args:
-            id: UUID of the project to delete
+            project_id: UUID of the project to delete
 
         Raises:
             NotFoundError: If project doesn't exist
             StorageError: If storage operation fails
         """
-        pass
 
 
 class FileStorage(ABC):
@@ -179,6 +270,13 @@ class FileStorage(ABC):
     Handles the storage and retrieval of file contents and metadata.
     Should support efficient handling of multiple files within a project.
     All operations are async to support high concurrency.
+
+    Implementation considerations:
+        - File content storage strategy
+        - Metadata management
+        - Path handling and validation
+        - Concurrent access
+        - Resource cleanup
     """
 
     @abstractmethod
@@ -196,14 +294,13 @@ class FileStorage(ABC):
             DuplicateError: If file path already exists in project
             StorageError: If storage operation fails
         """
-        pass
 
     @abstractmethod
-    async def get_file(self, id: UUID) -> File:
+    async def get_file(self, file_id: UUID) -> File:
         """Retrieve a file by its ID.
 
         Args:
-            id: UUID of the file to retrieve
+            file_id: UUID of the file to retrieve
 
         Returns:
             File: The requested file
@@ -212,7 +309,6 @@ class FileStorage(ABC):
             NotFoundError: If file doesn't exist
             StorageError: If storage operation fails
         """
-        pass
 
     @abstractmethod
     async def list_files(self, project_id: UUID) -> List[File]:
@@ -228,28 +324,26 @@ class FileStorage(ABC):
             NotFoundError: If project doesn't exist
             StorageError: If storage operation fails
         """
-        pass
 
     @abstractmethod
-    async def delete_file(self, id: UUID) -> None:
+    async def delete_file(self, file_id: UUID) -> None:
         """Delete a file from storage.
 
         Args:
-            id: UUID of the file to delete
+            file_id: UUID of the file to delete
 
         Raises:
             NotFoundError: If file doesn't exist
             StorageError: If storage operation fails
         """
-        pass
 
 
 class CodeExecutor(ABC):
     """Interface for code execution
 
     Manages the lifecycle of code execution, from initiation to completion.
-    Responsible for running code in appropriate isolation and capturing results.
-    Should handle resource limits and execution timeouts.
+    Responsible for running code in appropriate isolation and capturing
+    results. Should handle resource limits and execution timeouts.
 
     Implementation considerations:
         - Process isolation
@@ -280,7 +374,6 @@ class CodeExecutor(ABC):
             ExecutionError: If execution fails to start or times out
             ResourceError: If execution exceeds resource limits
         """
-        pass
 
     @abstractmethod
     async def terminate(self, execution_id: UUID) -> None:
@@ -295,7 +388,6 @@ class CodeExecutor(ABC):
             NotFoundError: If execution_id doesn't exist
             ExecutionError: If termination fails
         """
-        pass
 
     @abstractmethod
     async def get_status(self, execution_id: UUID) -> ExecutionResult:
@@ -310,15 +402,14 @@ class CodeExecutor(ABC):
         Raises:
             NotFoundError: If execution_id doesn't exist
         """
-        pass
 
 
 class RuntimeEnvironment(ABC):
     """Interface for managing isolated execution environments
 
-    Handles the creation and management of isolated environments for code execution.
-    Each environment should be isolated to prevent interference between projects
-    and ensure security.
+    Handles the creation and management of isolated environments for code
+    execution. Each environment should be isolated to prevent interference
+    between projects and ensure security.
 
     Implementation considerations:
         - Virtual environment creation
@@ -326,6 +417,7 @@ class RuntimeEnvironment(ABC):
         - Resource isolation
         - Environment cleanup
         - Security boundaries
+        - Concurrent environment management
     """
 
     @abstractmethod
@@ -344,7 +436,6 @@ class RuntimeEnvironment(ABC):
             EnvironmentError: If environment creation fails
             ResourceError: If system resources are insufficient
         """
-        pass
 
     @abstractmethod
     async def install_dependencies(self,
@@ -361,7 +452,6 @@ class RuntimeEnvironment(ABC):
             DependencyError: If package installation fails
             SecurityError: If package is blocked by security policy
         """
-        pass
 
     @abstractmethod
     async def cleanup_environment(self, env_id: str) -> None:
@@ -374,4 +464,3 @@ class RuntimeEnvironment(ABC):
             NotFoundError: If env_id doesn't exist
             EnvironmentError: If cleanup fails
         """
-        pass
