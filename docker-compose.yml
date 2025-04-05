@@ -1,0 +1,15 @@
+version: '3'
+services:
+  ollama_py:
+    build: .
+    volumes:
+      - ~/ollama_data:/root/.ollama
+      - .:/app
+    ports:
+      - "11434:11434"
+
+  tests:
+    build: .
+    volumes:
+      - .:/app
+    working_dir: /app

@@ -1,0 +1,34 @@
+Please fix the following issues in some Python source files.
+Here are the source files involved.
+
+{% for file in files %}
+<<<< {{ file.name }} <<<<
+{{ file.content }}
+>>>>>>>>
+{% endfor %}
+
+Here are the issues that need to be fixed:
+
+{% for issue in issues %}
+<<<< {{ issue.filename }} <<<<<
+{{ issue.content }}
+>>>>>>>>
+{% endfor %}
+
+Please follow these instructions:
+1. DO NOT DISCARD ANY DOCSTRINGS OR COMMENTS.
+2. If docstrings or comments are misleading, propose a fix for them.
+3. If any docstrings are missing, add them.
+
+Produce an explanation for the issues and your proposed fixes.
+
+Produce a unified diff for each file that requires changes. The format of
+the diff must be easy to parse. Use this format:
+
+<<<< {{ file.name }} <<<<
+--- {{ file.name }}
++++ {{ file.name }}
+@@ -1,1 +1,1 @@
+-Getting rid of that
++Replacing it with this
+>>>>>>>>
